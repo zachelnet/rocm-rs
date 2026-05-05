@@ -12,9 +12,9 @@ pub struct rocrand_discrete_distribution_st {
 pub type rocrand_discrete_distribution = *mut rocrand_discrete_distribution_st;
 pub type uint4 = u128;
 #[repr(C)]
-#[derive(Debug)]
+#[derive(Debug, Copy, Clone)]
 pub struct __half {
-    pub __x: ::std::os::raw::c_ushort,
+    pub _address: u8,
 }
 pub type half = __half;
 #[repr(C)]

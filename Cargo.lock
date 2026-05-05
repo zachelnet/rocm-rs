@@ -344,9 +344,9 @@ dependencies = [
 
 [[package]]
 name = "rocm_kernel_macros"
-version = "0.5.0"
+version = "0.5.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2554ba75ab4ff9e6dd58ff73c746925baf5411e5642a9784efcbb8aa1b6d64bc"
+checksum = "a10a0a521d5434e8b0e33523738582b3cf5979d66a99d8a697e67b07c1ee7639"
 dependencies = [
  "fslock",
  "proc-macro2",
@@ -359,9 +359,9 @@ dependencies = [
 
 [[package]]
 name = "rocm_smi_lib"
-version = "0.3.1"
+version = "0.3.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "006240ac7bd49d2a6620caefe2980a47f519250d87f8caceed8c9b8b71138ec1"
+checksum = "7afba914d5346b116ac94329117bc3604bda9904ab76989f5252059dd9819178"
 dependencies = [
  "libc",
  "rocm_smi_lib_sys",
@@ -369,9 +369,9 @@ dependencies = [
 
 [[package]]
 name = "rocm_smi_lib_sys"
-version = "0.3.1"
+version = "0.3.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "aea9e2328c7caf85ec41af3f4bb63f72b3119f99071bad98096a4c4b0a6a39c3"
+checksum = "057955e1d842a15812bd32a72424f15eef819d6d0fb005bb0133da44eacd8d8a"
 dependencies = [
  "bindgen 0.69.5",
  "libc",

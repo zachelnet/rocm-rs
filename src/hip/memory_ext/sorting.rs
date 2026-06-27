@@ -119,6 +119,9 @@ pub(crate) const SORTING_KERNEL: &[u8] = include_bytes!(amdgpu_kernel_finalize!(
 pub(crate) const SORTING_KERNEL: &[u8] = &[];
 
 pub(crate) fn sort<T>(mem: &mut DeviceMemory<T>, stream: &Stream, ascending: bool) -> Result<()> {
+    if !cfg!(feature = "gpu-sort") {
+        return Ok(());
+    }
     let module = Module::load_data(SORTING_KERNEL)?;
 
     let sort_odd =

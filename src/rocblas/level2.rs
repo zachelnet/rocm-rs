@@ -4671,3 +4671,100 @@ macro_rules! impl_hpr2 {
 
 impl_hpr2!(ffi::rocblas_float_complex, ffi::rocblas_chpr2);
 impl_hpr2!(ffi::rocblas_double_complex, ffi::rocblas_zhpr2);
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::hip::DeviceMemory;
+
+    fn dev(data: &[f32]) -> DeviceMemory<f32> {
+        let mut m = DeviceMemory::<f32>::new(data.len()).unwrap();
+        m.copy_from_host(data).unwrap();
+        m
+    }
+
+    fn host(m: &DeviceMemory<f32>, n: usize) -> Vec<f32> {
+        let mut v = vec![0.0f32; n];
+        m.copy_to_host(&mut v).unwrap();
+        v
+    }
+
+    fn approx(actual: &[f32], expected: &[f32]) {
+        assert_eq!(actual.len(), expected.len());
+        for (a, e) in actual.iter().zip(expected) {
+            assert!((a - e).abs() < 1e-4, "{actual:?} != {expected:?}");
+        }
+    }
+
+    #[test]
+    fn test_symv() {
+        let handle = Handle::new().unwrap();
+        // Symmetric A = [[2, 1], [1, 3]] column-major (lower triangle ignored).
+        let a = dev(&[2.0, 0.0, 1.0, 3.0]);
+        let x = dev(&[1.0, 1.0]);
+        let mut y = dev(&[0.0, 0.0]);
+        unsafe {
+            symv(
+                &handle,
+                Fill::Upper,
+                2,
+                &1.0,
+                a.as_ptr().cast::<f32>(),
+                2,
+                x.as_ptr().cast::<f32>(),
+                1,
+                &0.0,
+                y.as_ptr().cast::<f32>(),
+                1,
+            )
+            .unwrap();
+        }
+        approx(&host(&y, 2), &[3.0, 4.0]);
+    }
+
+    #[test]
+    fn test_trmv() {
+        let handle = Handle::new().unwrap();
+        // Upper triangular A = [[2, 1], [0, 3]] column-major.
+        let a = dev(&[2.0, 0.0, 1.0, 3.0]);
+        let mut x = dev(&[1.0, 1.0]);
+        unsafe {
+            trmv(
+                &handle,
+                Fill::Upper,
+                Operation::None,
+                Diagonal::NonUnit,
+                2,
+                a.as_ptr().cast::<f32>(),
+                2,
+                x.as_ptr().cast::<f32>(),
+                1,
+            )
+            .unwrap();
+        }
+        approx(&host(&x, 2), &[3.0, 3.0]);
+    }
+
+    #[test]
+    fn test_trsv() {
+        let handle = Handle::new().unwrap();
+        // Solve A x = b with upper triangular A = [[2, 1], [0, 3]], b = [3, 3].
+        let a = dev(&[2.0, 0.0, 1.0, 3.0]);
+        let mut x = dev(&[3.0, 3.0]);
+        unsafe {
+            trsv(
+                &handle,
+                Fill::Upper,
+                Operation::None,
+                Diagonal::NonUnit,
+                2,
+                a.as_ptr().cast::<f32>(),
+                2,
+                x.as_ptr().cast::<f32>(),
+                1,
+            )
+            .unwrap();
+        }
+        approx(&host(&x, 2), &[1.0, 1.0]);
+    }
+}

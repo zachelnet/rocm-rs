@@ -1574,3 +1574,60 @@ impl_rot_trait!(
     (handle: &Handle, a: *mut Self, stride_a: i64, b: *mut Self, stride_b: i64, c: *mut Self::Real, stride_c: i64, s: *mut Self, stride_s: i64, batch_count: i32),
     (handle.as_raw(), a, stride_a, b, stride_b, c, stride_c, s, stride_s, batch_count)
 );
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn dev(data: &[f32]) -> DeviceMemory<f32> {
+        let mut m = DeviceMemory::<f32>::new(data.len()).unwrap();
+        m.copy_from_host(data).unwrap();
+        m
+    }
+
+    #[test]
+    fn test_nrm2() {
+        let handle = Handle::new().unwrap();
+        let x = dev(&[3.0, 4.0]);
+        let mut result = 0.0f32;
+        unsafe {
+            nrm2(&handle, 2, x.as_ptr().cast::<f32>(), 1, &mut result).unwrap();
+        }
+        assert!((result - 5.0).abs() < 1e-4, "nrm2 = {result}");
+    }
+
+    #[test]
+    fn test_asum() {
+        let handle = Handle::new().unwrap();
+        let x = dev(&[1.0, -2.0, 3.0]);
+        let mut result = 0.0f32;
+        unsafe {
+            asum(&handle, 3, x.as_ptr().cast::<f32>(), 1, &mut result).unwrap();
+        }
+        assert!((result - 6.0).abs() < 1e-4, "asum = {result}");
+    }
+
+    #[test]
+    fn test_amax() {
+        let handle = Handle::new().unwrap();
+        let x = dev(&[1.0, -5.0, 3.0]);
+        let mut idx = 0i32;
+        unsafe {
+            amax(&handle, 3, x.as_ptr().cast::<f32>(), 1, &mut idx).unwrap();
+        }
+        // rocBLAS returns a 1-based index; |-5| is the largest magnitude.
+        assert_eq!(idx, 2, "amax index = {idx}");
+    }
+
+    #[test]
+    fn test_amin() {
+        let handle = Handle::new().unwrap();
+        let x = dev(&[1.0, -5.0, 3.0]);
+        let mut idx = 0i32;
+        unsafe {
+            amin(&handle, 3, x.as_ptr().cast::<f32>(), 1, &mut idx).unwrap();
+        }
+        // 1-based index; |1| is the smallest magnitude.
+        assert_eq!(idx, 1, "amin index = {idx}");
+    }
+}

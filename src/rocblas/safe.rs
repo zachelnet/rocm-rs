@@ -396,3 +396,181 @@ fn check_matrix<T>(mem: &DeviceMemory<T>, lda: i32, cols: i32) -> Result<()> {
         _ => Err(invalid_size()),
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Upload a host slice to a fresh device allocation.
+    fn dev(data: &[f32]) -> DeviceMemory<f32> {
+        let mut m = DeviceMemory::<f32>::new(data.len()).unwrap();
+        m.copy_from_host(data).unwrap();
+        m
+    }
+
+    /// Download `n` elements from device memory back to the host.
+    fn host(m: &DeviceMemory<f32>, n: usize) -> Vec<f32> {
+        let mut v = vec![0.0f32; n];
+        m.copy_to_host(&mut v).unwrap();
+        v
+    }
+
+    fn approx(actual: &[f32], expected: &[f32]) {
+        assert_eq!(actual.len(), expected.len(), "length mismatch");
+        for (a, e) in actual.iter().zip(expected) {
+            assert!((a - e).abs() < 1e-4, "{actual:?} != {expected:?}");
+        }
+    }
+
+    #[test]
+    fn test_scal() {
+        let handle = Handle::new().unwrap();
+        let mut x = dev(&[1.0, 2.0, 3.0, 4.0]);
+        scal(&handle, &2.0, &mut x, 1).unwrap();
+        approx(&host(&x, 4), &[2.0, 4.0, 6.0, 8.0]);
+    }
+
+    #[test]
+    fn test_axpy() {
+        let handle = Handle::new().unwrap();
+        let x = dev(&[1.0, 2.0, 3.0]);
+        let mut y = dev(&[10.0, 20.0, 30.0]);
+        axpy(&handle, &2.0, &x, 1, &mut y, 1).unwrap();
+        approx(&host(&y, 3), &[12.0, 24.0, 36.0]);
+    }
+
+    #[test]
+    fn test_copy() {
+        let handle = Handle::new().unwrap();
+        let x = dev(&[7.0, 8.0, 9.0]);
+        let mut y = dev(&[0.0, 0.0, 0.0]);
+        copy(&handle, &x, 1, &mut y, 1).unwrap();
+        approx(&host(&y, 3), &[7.0, 8.0, 9.0]);
+    }
+
+    #[test]
+    fn test_swap() {
+        let handle = Handle::new().unwrap();
+        let mut x = dev(&[1.0, 2.0]);
+        let mut y = dev(&[3.0, 4.0]);
+        swap(&handle, &mut x, 1, &mut y, 1).unwrap();
+        approx(&host(&x, 2), &[3.0, 4.0]);
+        approx(&host(&y, 2), &[1.0, 2.0]);
+    }
+
+    #[test]
+    fn test_dot() {
+        let handle = Handle::new().unwrap();
+        let x = dev(&[1.0, 2.0, 3.0]);
+        let y = dev(&[4.0, 5.0, 6.0]);
+        let mut out = 0.0f32;
+        dot(&handle, &x, 1, &y, 1, &mut out).unwrap();
+        assert!((out - 32.0).abs() < 1e-4, "dot = {out}");
+    }
+
+    #[test]
+    fn test_gemv() {
+        let handle = Handle::new().unwrap();
+        // A = [[1, 2], [3, 4]] stored column-major.
+        let a = dev(&[1.0, 3.0, 2.0, 4.0]);
+        let x = dev(&[1.0, 1.0]);
+        let mut y = dev(&[0.0, 0.0]);
+        gemv(
+            &handle,
+            Operation::None,
+            2,
+            2,
+            &1.0,
+            &a,
+            2,
+            &x,
+            1,
+            &0.0,
+            &mut y,
+            1,
+        )
+        .unwrap();
+        approx(&host(&y, 2), &[3.0, 7.0]);
+    }
+
+    #[test]
+    fn test_gemm() {
+        let handle = Handle::new().unwrap();
+        // A = [[1, 2], [3, 4]], B = [[5, 6], [7, 8]] (column-major).
+        let a = dev(&[1.0, 3.0, 2.0, 4.0]);
+        let b = dev(&[5.0, 7.0, 6.0, 8.0]);
+        let mut c = dev(&[0.0, 0.0, 0.0, 0.0]);
+        gemm(
+            &handle,
+            Operation::None,
+            Operation::None,
+            2,
+            2,
+            2,
+            &1.0,
+            &a,
+            2,
+            &b,
+            2,
+            &0.0,
+            &mut c,
+            2,
+        )
+        .unwrap();
+        // C = A*B = [[19, 22], [43, 50]] column-major.
+        approx(&host(&c, 4), &[19.0, 43.0, 22.0, 50.0]);
+    }
+
+    #[test]
+    fn test_syrk() {
+        let handle = Handle::new().unwrap();
+        // A = [[1, 2], [3, 4]] column-major; C := A * A^T, lower triangle.
+        let a = dev(&[1.0, 3.0, 2.0, 4.0]);
+        let mut c = dev(&[0.0, 0.0, 0.0, 0.0]);
+        syrk(
+            &handle,
+            Fill::Lower,
+            Operation::None,
+            2,
+            2,
+            &1.0,
+            &a,
+            2,
+            &0.0,
+            &mut c,
+            2,
+        )
+        .unwrap();
+        // A*A^T = [[5, 11], [11, 25]]; only the lower triangle is written.
+        let out = host(&c, 4);
+        assert!((out[0] - 5.0).abs() < 1e-4, "c[0,0] = {}", out[0]);
+        assert!((out[1] - 11.0).abs() < 1e-4, "c[1,0] = {}", out[1]);
+        assert!((out[3] - 25.0).abs() < 1e-4, "c[1,1] = {}", out[3]);
+    }
+
+    #[test]
+    fn test_size_validation_rejects_small_output() {
+        let handle = Handle::new().unwrap();
+        let a = dev(&[1.0, 3.0, 2.0, 4.0]);
+        let b = dev(&[5.0, 7.0, 6.0, 8.0]);
+        // C is too small (needs 4 elements for a 2x2 result).
+        let mut c = dev(&[0.0]);
+        let err = gemm(
+            &handle,
+            Operation::None,
+            Operation::None,
+            2,
+            2,
+            2,
+            &1.0,
+            &a,
+            2,
+            &b,
+            2,
+            &0.0,
+            &mut c,
+            2,
+        );
+        assert!(err.is_err(), "expected invalid_size error for undersized C");
+    }
+}

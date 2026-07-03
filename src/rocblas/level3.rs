@@ -3262,3 +3262,174 @@ impl_geam!(f32, ffi::rocblas_sgeam);
 impl_geam!(f64, ffi::rocblas_dgeam);
 impl_geam!(ffi::rocblas_float_complex, ffi::rocblas_cgeam);
 impl_geam!(ffi::rocblas_double_complex, ffi::rocblas_zgeam);
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::hip::DeviceMemory;
+
+    fn dev(data: &[f32]) -> DeviceMemory<f32> {
+        let mut m = DeviceMemory::<f32>::new(data.len()).unwrap();
+        m.copy_from_host(data).unwrap();
+        m
+    }
+
+    fn host(m: &DeviceMemory<f32>, n: usize) -> Vec<f32> {
+        let mut v = vec![0.0f32; n];
+        m.copy_to_host(&mut v).unwrap();
+        v
+    }
+
+    fn approx(actual: &[f32], expected: &[f32]) {
+        assert_eq!(actual.len(), expected.len());
+        for (a, e) in actual.iter().zip(expected) {
+            assert!((a - e).abs() < 1e-4, "{actual:?} != {expected:?}");
+        }
+    }
+
+    #[test]
+    fn test_symm() {
+        let handle = Handle::new().unwrap();
+        // Symmetric A = [[2, 1], [1, 3]] column-major, B = identity.
+        let a = dev(&[2.0, 0.0, 1.0, 3.0]);
+        let b = dev(&[1.0, 0.0, 0.0, 1.0]);
+        let mut c = dev(&[0.0, 0.0, 0.0, 0.0]);
+        unsafe {
+            symm(
+                &handle,
+                Side::Left,
+                Fill::Upper,
+                2,
+                2,
+                &1.0,
+                a.as_ptr().cast::<f32>(),
+                2,
+                b.as_ptr().cast::<f32>(),
+                2,
+                &0.0,
+                c.as_ptr().cast::<f32>(),
+                2,
+            )
+            .unwrap();
+        }
+        // C = A * I = A = [[2, 1], [1, 3]] column-major.
+        approx(&host(&c, 4), &[2.0, 1.0, 1.0, 3.0]);
+    }
+
+    #[test]
+    fn test_syr2k() {
+        let handle = Handle::new().unwrap();
+        // A = [[1], [2]], B = [[3], [4]] column-major (n=2, k=1).
+        let a = dev(&[1.0, 2.0]);
+        let b = dev(&[3.0, 4.0]);
+        let mut c = dev(&[0.0, 0.0, 0.0, 0.0]);
+        unsafe {
+            syr2k(
+                &handle,
+                Fill::Lower,
+                Operation::None,
+                2,
+                1,
+                &1.0,
+                a.as_ptr().cast::<f32>(),
+                2,
+                b.as_ptr().cast::<f32>(),
+                2,
+                &0.0,
+                c.as_ptr().cast::<f32>(),
+                2,
+            )
+            .unwrap();
+        }
+        // A*B^T + B*A^T = [[6, 10], [10, 16]]; only the lower triangle is written.
+        let out = host(&c, 4);
+        assert!((out[0] - 6.0).abs() < 1e-4, "c[0,0] = {}", out[0]);
+        assert!((out[1] - 10.0).abs() < 1e-4, "c[1,0] = {}", out[1]);
+        assert!((out[3] - 16.0).abs() < 1e-4, "c[1,1] = {}", out[3]);
+    }
+
+    #[test]
+    fn test_trmm() {
+        let handle = Handle::new().unwrap();
+        // Upper triangular A = [[2, 1], [0, 3]], B = identity, separate output C.
+        let a = dev(&[2.0, 0.0, 1.0, 3.0]);
+        let b = dev(&[1.0, 0.0, 0.0, 1.0]);
+        let mut c = dev(&[0.0, 0.0, 0.0, 0.0]);
+        unsafe {
+            trmm(
+                &handle,
+                Side::Left,
+                Fill::Upper,
+                Operation::None,
+                Diagonal::NonUnit,
+                2,
+                2,
+                &1.0,
+                a.as_ptr().cast::<f32>(),
+                2,
+                b.as_ptr().cast::<f32>(),
+                2,
+                c.as_ptr().cast::<f32>(),
+                2,
+            )
+            .unwrap();
+        }
+        // C = A * I = A = [[2, 1], [0, 3]] column-major.
+        approx(&host(&c, 4), &[2.0, 0.0, 1.0, 3.0]);
+    }
+
+    #[test]
+    fn test_trsm() {
+        let handle = Handle::new().unwrap();
+        // Solve A X = B with A = [[2, 1], [0, 3]] and B = A; X = identity. B is in-place.
+        let a = dev(&[2.0, 0.0, 1.0, 3.0]);
+        let mut b = dev(&[2.0, 0.0, 1.0, 3.0]);
+        unsafe {
+            trsm(
+                &handle,
+                Side::Left,
+                Fill::Upper,
+                Operation::None,
+                Diagonal::NonUnit,
+                2,
+                2,
+                &1.0,
+                a.as_ptr().cast::<f32>(),
+                2,
+                b.as_ptr().cast::<f32>(),
+                2,
+            )
+            .unwrap();
+        }
+        approx(&host(&b, 4), &[1.0, 0.0, 0.0, 1.0]);
+    }
+
+    #[test]
+    fn test_geam() {
+        let handle = Handle::new().unwrap();
+        // C = A + B, A = [[1, 2], [3, 4]], B = [[5, 6], [7, 8]] column-major.
+        let a = dev(&[1.0, 3.0, 2.0, 4.0]);
+        let b = dev(&[5.0, 7.0, 6.0, 8.0]);
+        let mut c = dev(&[0.0, 0.0, 0.0, 0.0]);
+        unsafe {
+            geam(
+                &handle,
+                Operation::None,
+                Operation::None,
+                2,
+                2,
+                &1.0,
+                a.as_ptr().cast::<f32>(),
+                2,
+                &1.0,
+                b.as_ptr().cast::<f32>(),
+                2,
+                c.as_ptr().cast::<f32>(),
+                2,
+            )
+            .unwrap();
+        }
+        // C = [[6, 8], [10, 12]] column-major.
+        approx(&host(&c, 4), &[6.0, 10.0, 8.0, 12.0]);
+    }
+}

@@ -440,6 +440,7 @@ pub use bindings::rocblas_dspr_strided_batched;
 pub use bindings::rocblas_dspr2;
 pub use bindings::rocblas_dspr2_batched;
 pub use bindings::rocblas_dspr2_strided_batched;
+pub use bindings::rocblas_dsyr;
 pub use bindings::rocblas_dsyr2;
 pub use bindings::rocblas_dsyr2_batched;
 pub use bindings::rocblas_dsyr2_strided_batched;
@@ -489,8 +490,91 @@ pub use bindings::rocblas_zsyr2;
 pub use bindings::rocblas_zsyr2_batched;
 pub use bindings::rocblas_zsyr2_strided_batched;
 
+// Level 3 BLAS - SYMM, SYRK, SYR2K, TRMM, TRSM, GEAM
+pub use bindings::rocblas_csymm;
+pub use bindings::rocblas_dsymm;
+pub use bindings::rocblas_ssymm;
+pub use bindings::rocblas_zsymm;
+
+pub use bindings::rocblas_csyrk;
+pub use bindings::rocblas_dsyrk;
+pub use bindings::rocblas_ssyrk;
+pub use bindings::rocblas_zsyrk;
+
+pub use bindings::rocblas_csyr2k;
+pub use bindings::rocblas_dsyr2k;
+pub use bindings::rocblas_ssyr2k;
+pub use bindings::rocblas_zsyr2k;
+
+pub use bindings::rocblas_ctrmm;
+pub use bindings::rocblas_dtrmm;
+pub use bindings::rocblas_strmm;
+pub use bindings::rocblas_ztrmm;
+
+pub use bindings::rocblas_ctrsm;
+pub use bindings::rocblas_dtrsm;
+pub use bindings::rocblas_strsm;
+pub use bindings::rocblas_ztrsm;
+
+pub use bindings::rocblas_cgeam;
+pub use bindings::rocblas_dgeam;
+pub use bindings::rocblas_sgeam;
+pub use bindings::rocblas_zgeam;
+
 pub use bindings::hipStream_t;
 pub use bindings::rocblas_abort;
+
+// Level 2 BLAS - SYMV, TRMV, TRSV
+pub use bindings::rocblas_csymv;
+pub use bindings::rocblas_dsymv;
+pub use bindings::rocblas_ssymv;
+pub use bindings::rocblas_zsymv;
+
+pub use bindings::rocblas_ctrmv;
+pub use bindings::rocblas_dtrmv;
+pub use bindings::rocblas_strmv;
+pub use bindings::rocblas_ztrmv;
+
+pub use bindings::rocblas_ctrsv;
+pub use bindings::rocblas_dtrsv;
+pub use bindings::rocblas_strsv;
+pub use bindings::rocblas_ztrsv;
+
+// Level 2 BLAS - packed/banded triangular, symmetric, Hermitian ops
+pub use bindings::rocblas_ctpmv;
+pub use bindings::rocblas_dtpmv;
+pub use bindings::rocblas_stpmv;
+pub use bindings::rocblas_ztpmv;
+
+pub use bindings::rocblas_ctpsv;
+pub use bindings::rocblas_dtpsv;
+pub use bindings::rocblas_stpsv;
+pub use bindings::rocblas_ztpsv;
+
+pub use bindings::rocblas_ctbmv;
+pub use bindings::rocblas_dtbmv;
+pub use bindings::rocblas_stbmv;
+pub use bindings::rocblas_ztbmv;
+
+pub use bindings::rocblas_ctbsv;
+pub use bindings::rocblas_dtbsv;
+pub use bindings::rocblas_stbsv;
+pub use bindings::rocblas_ztbsv;
+
+pub use bindings::rocblas_dspmv;
+pub use bindings::rocblas_sspmv;
+
+pub use bindings::rocblas_dsbmv;
+pub use bindings::rocblas_ssbmv;
+
+pub use bindings::rocblas_chpmv;
+pub use bindings::rocblas_zhpmv;
+
+pub use bindings::rocblas_chpr;
+pub use bindings::rocblas_zhpr;
+
+pub use bindings::rocblas_chpr2;
+pub use bindings::rocblas_zhpr2;
 pub use bindings::rocblas_device_malloc_set_default_memory_size;
 pub use bindings::rocblas_gemm_ex;
 pub use bindings::rocblas_get_device_memory_size;

@@ -3,11 +3,14 @@
 use crate::rocblas::bindings::_rocblas_handle;
 use crate::rocblas::error::{Error, Result};
 use crate::rocblas::handle::Handle;
-use crate::rocblas::types::{Fill, Operation};
+use crate::rocblas::types::{Diagonal, Fill, Operation};
 use crate::rocblas::{ffi, rocblas_operation};
 use crate::*;
 
-use super::level3::{HemmType, HerkType, SprType, SyrBatchedType, SyrStridedBatchedType};
+use super::level3::{
+    HemmType, HerkType, Spr2Type, SprType, SyrBatchedType, SyrStridedBatchedType, SyrType,
+    Syr2Type,
+};
 use super::types::Side;
 
 //==============================================================================
@@ -1919,7 +1922,98 @@ where
     }
 }
 
-// Similar functions and traits for spr, spr2, syr, syr2
+/// Symmetric rank-1 update
+///
+/// A := alpha * x * x^T + A
+///
+/// # Arguments
+/// * `handle` - RocBLAS handle
+/// * `uplo` - Specifies whether the upper or lower triangular part is stored
+/// * `n` - Order of matrix A
+/// * `alpha` - Scalar alpha
+/// * `x` - Vector x
+/// * `incx` - Stride between consecutive elements of x
+/// * `A` - Matrix A
+/// * `lda` - Leading dimension of matrix A
+pub unsafe fn syr<T>(
+    handle: &Handle,
+    uplo: Fill,
+    n: i32,
+    alpha: &T,
+    x: *const T,
+    incx: i32,
+    A: *mut T,
+    lda: i32,
+) -> Result<()>
+where
+    T: SyrType,
+{
+    unsafe { T::rocblas_syr(handle, uplo, n, alpha, x, incx, A, lda) }
+}
+
+/// Symmetric rank-2 update
+///
+/// A := alpha * x * y^T + alpha * y * x^T + A
+///
+/// # Arguments
+/// * `handle` - RocBLAS handle
+/// * `uplo` - Specifies whether the upper or lower triangular part is stored
+/// * `n` - Order of matrix A
+/// * `alpha` - Scalar alpha
+/// * `x` - Vector x
+/// * `incx` - Stride between consecutive elements of x
+/// * `y` - Vector y
+/// * `incy` - Stride between consecutive elements of y
+/// * `A` - Matrix A
+/// * `lda` - Leading dimension of matrix A
+pub unsafe fn syr2<T>(
+    handle: &Handle,
+    uplo: Fill,
+    n: i32,
+    alpha: &T,
+    x: *const T,
+    incx: i32,
+    y: *const T,
+    incy: i32,
+    A: *mut T,
+    lda: i32,
+) -> Result<()>
+where
+    T: Syr2Type,
+{
+    unsafe { T::rocblas_syr2(handle, uplo, n, alpha, x, incx, y, incy, A, lda) }
+}
+
+/// Packed symmetric rank-2 update
+///
+/// AP := alpha * x * y^T + alpha * y * x^T + AP
+///
+/// # Arguments
+/// * `handle` - RocBLAS handle
+/// * `uplo` - Specifies whether the upper or lower triangular part is stored
+/// * `n` - Order of matrix A
+/// * `alpha` - Scalar alpha
+/// * `x` - Vector x
+/// * `incx` - Stride between consecutive elements of x
+/// * `y` - Vector y
+/// * `incy` - Stride between consecutive elements of y
+/// * `AP` - Packed matrix A
+pub unsafe fn spr2<T>(
+    handle: &Handle,
+    uplo: Fill,
+    n: i32,
+    alpha: &T,
+    x: *const T,
+    incx: i32,
+    y: *const T,
+    incy: i32,
+    AP: *mut T,
+) -> Result<()>
+where
+    T: Spr2Type,
+{
+    unsafe { T::rocblas_spr2(handle, uplo, n, alpha, x, incx, y, incy, AP) }
+}
 
 // For level3.rs additions
 /// Hermitian matrix-matrix multiplication
@@ -3588,3 +3682,992 @@ impl Syr2StridedBatchedType for ffi::rocblas_double_complex {
         Ok(())
     }
 }
+
+//==============================================================================
+// SYMV - Symmetric matrix-vector multiplication
+//==============================================================================
+
+/// Symmetric matrix-vector multiplication
+///
+/// y := alpha * A * x + beta * y
+///
+/// where alpha and beta are scalars, x and y are vectors, and A is a symmetric matrix.
+pub unsafe fn symv<T>(
+    handle: &Handle,
+    uplo: Fill,
+    n: i32,
+    alpha: &T,
+    A: *const T,
+    lda: i32,
+    x: *const T,
+    incx: i32,
+    beta: &T,
+    y: *mut T,
+    incy: i32,
+) -> Result<()>
+where
+    T: SymvType,
+{
+    unsafe { T::rocblas_symv(handle, uplo, n, alpha, A, lda, x, incx, beta, y, incy) }
+}
+
+pub trait SymvType {
+    unsafe fn rocblas_symv(
+        handle: &Handle,
+        uplo: Fill,
+        n: i32,
+        alpha: &Self,
+        A: *const Self,
+        lda: i32,
+        x: *const Self,
+        incx: i32,
+        beta: &Self,
+        y: *mut Self,
+        incy: i32,
+    ) -> Result<()>;
+}
+
+macro_rules! impl_symv {
+    ($t:ty, $func:path) => {
+        impl SymvType for $t {
+            unsafe fn rocblas_symv(
+                handle: &Handle,
+                uplo: Fill,
+                n: i32,
+                alpha: &Self,
+                A: *const Self,
+                lda: i32,
+                x: *const Self,
+                incx: i32,
+                beta: &Self,
+                y: *mut Self,
+                incy: i32,
+            ) -> Result<()> {
+                let status = unsafe {
+                    $func(
+                        handle.as_raw(),
+                        uplo.into(),
+                        n,
+                        alpha,
+                        A,
+                        lda,
+                        x,
+                        incx,
+                        beta,
+                        y,
+                        incy,
+                    )
+                };
+                if status != ffi::rocblas_status__rocblas_status_success {
+                    return Err(Error::new(status));
+                }
+                Ok(())
+            }
+        }
+    };
+}
+
+impl_symv!(f32, ffi::rocblas_ssymv);
+impl_symv!(f64, ffi::rocblas_dsymv);
+impl_symv!(ffi::rocblas_float_complex, ffi::rocblas_csymv);
+impl_symv!(ffi::rocblas_double_complex, ffi::rocblas_zsymv);
+
+//==============================================================================
+// TRMV - Triangular matrix-vector multiplication
+//==============================================================================
+
+/// Triangular matrix-vector multiplication
+///
+/// x := op(A) * x
+///
+/// where x is a vector, and A is a triangular matrix that is optionally transposed and/or unit
+/// triangular. The result overwrites x.
+pub unsafe fn trmv<T>(
+    handle: &Handle,
+    uplo: Fill,
+    trans_a: Operation,
+    diag: Diagonal,
+    n: i32,
+    A: *const T,
+    lda: i32,
+    x: *mut T,
+    incx: i32,
+) -> Result<()>
+where
+    T: TrmvType,
+{
+    unsafe { T::rocblas_trmv(handle, uplo, trans_a, diag, n, A, lda, x, incx) }
+}
+
+pub trait TrmvType {
+    unsafe fn rocblas_trmv(
+        handle: &Handle,
+        uplo: Fill,
+        trans_a: Operation,
+        diag: Diagonal,
+        n: i32,
+        A: *const Self,
+        lda: i32,
+        x: *mut Self,
+        incx: i32,
+    ) -> Result<()>;
+}
+
+macro_rules! impl_trmv {
+    ($t:ty, $func:path) => {
+        impl TrmvType for $t {
+            unsafe fn rocblas_trmv(
+                handle: &Handle,
+                uplo: Fill,
+                trans_a: Operation,
+                diag: Diagonal,
+                n: i32,
+                A: *const Self,
+                lda: i32,
+                x: *mut Self,
+                incx: i32,
+            ) -> Result<()> {
+                let status = unsafe {
+                    $func(
+                        handle.as_raw(),
+                        uplo.into(),
+                        trans_a.into(),
+                        diag.into(),
+                        n,
+                        A,
+                        lda,
+                        x,
+                        incx,
+                    )
+                };
+                if status != ffi::rocblas_status__rocblas_status_success {
+                    return Err(Error::new(status));
+                }
+                Ok(())
+            }
+        }
+    };
+}
+
+impl_trmv!(f32, ffi::rocblas_strmv);
+impl_trmv!(f64, ffi::rocblas_dtrmv);
+impl_trmv!(ffi::rocblas_float_complex, ffi::rocblas_ctrmv);
+impl_trmv!(ffi::rocblas_double_complex, ffi::rocblas_ztrmv);
+
+//==============================================================================
+// TRSV - Triangular solve
+//==============================================================================
+
+/// Triangular solve
+///
+/// Solves op(A) * x = b
+///
+/// where x and b are vectors, and A is a triangular matrix that is optionally transposed and/or
+/// unit triangular. On entry, x contains b; on exit, x is overwritten with the solution.
+pub unsafe fn trsv<T>(
+    handle: &Handle,
+    uplo: Fill,
+    trans_a: Operation,
+    diag: Diagonal,
+    n: i32,
+    A: *const T,
+    lda: i32,
+    x: *mut T,
+    incx: i32,
+) -> Result<()>
+where
+    T: TrsvType,
+{
+    unsafe { T::rocblas_trsv(handle, uplo, trans_a, diag, n, A, lda, x, incx) }
+}
+
+pub trait TrsvType {
+    unsafe fn rocblas_trsv(
+        handle: &Handle,
+        uplo: Fill,
+        trans_a: Operation,
+        diag: Diagonal,
+        n: i32,
+        A: *const Self,
+        lda: i32,
+        x: *mut Self,
+        incx: i32,
+    ) -> Result<()>;
+}
+
+macro_rules! impl_trsv {
+    ($t:ty, $func:path) => {
+        impl TrsvType for $t {
+            unsafe fn rocblas_trsv(
+                handle: &Handle,
+                uplo: Fill,
+                trans_a: Operation,
+                diag: Diagonal,
+                n: i32,
+                A: *const Self,
+                lda: i32,
+                x: *mut Self,
+                incx: i32,
+            ) -> Result<()> {
+                let status = unsafe {
+                    $func(
+                        handle.as_raw(),
+                        uplo.into(),
+                        trans_a.into(),
+                        diag.into(),
+                        n,
+                        A,
+                        lda,
+                        x,
+                        incx,
+                    )
+                };
+                if status != ffi::rocblas_status__rocblas_status_success {
+                    return Err(Error::new(status));
+                }
+                Ok(())
+            }
+        }
+    };
+}
+
+impl_trsv!(f32, ffi::rocblas_strsv);
+impl_trsv!(f64, ffi::rocblas_dtrsv);
+impl_trsv!(ffi::rocblas_float_complex, ffi::rocblas_ctrsv);
+impl_trsv!(ffi::rocblas_double_complex, ffi::rocblas_ztrsv);
+
+//==============================================================================
+// TPMV - Triangular packed matrix-vector multiplication
+//==============================================================================
+
+/// Triangular packed matrix-vector multiplication
+///
+/// x := op(A) * x
+///
+/// where x is a vector, and A is a packed triangular matrix that is optionally transposed and/or
+/// unit triangular. The result overwrites x.
+pub unsafe fn tpmv<T>(
+    handle: &Handle,
+    uplo: Fill,
+    trans_a: Operation,
+    diag: Diagonal,
+    n: i32,
+    A: *const T,
+    x: *mut T,
+    incx: i32,
+) -> Result<()>
+where
+    T: TpmvType,
+{
+    unsafe { T::rocblas_tpmv(handle, uplo, trans_a, diag, n, A, x, incx) }
+}
+
+pub trait TpmvType {
+    unsafe fn rocblas_tpmv(
+        handle: &Handle,
+        uplo: Fill,
+        trans_a: Operation,
+        diag: Diagonal,
+        n: i32,
+        A: *const Self,
+        x: *mut Self,
+        incx: i32,
+    ) -> Result<()>;
+}
+
+macro_rules! impl_tpmv {
+    ($t:ty, $func:path) => {
+        impl TpmvType for $t {
+            unsafe fn rocblas_tpmv(
+                handle: &Handle,
+                uplo: Fill,
+                trans_a: Operation,
+                diag: Diagonal,
+                n: i32,
+                A: *const Self,
+                x: *mut Self,
+                incx: i32,
+            ) -> Result<()> {
+                let status = unsafe {
+                    $func(
+                        handle.as_raw(),
+                        uplo.into(),
+                        trans_a.into(),
+                        diag.into(),
+                        n,
+                        A,
+                        x,
+                        incx,
+                    )
+                };
+                if status != ffi::rocblas_status__rocblas_status_success {
+                    return Err(Error::new(status));
+                }
+                Ok(())
+            }
+        }
+    };
+}
+
+impl_tpmv!(f32, ffi::rocblas_stpmv);
+impl_tpmv!(f64, ffi::rocblas_dtpmv);
+impl_tpmv!(ffi::rocblas_float_complex, ffi::rocblas_ctpmv);
+impl_tpmv!(ffi::rocblas_double_complex, ffi::rocblas_ztpmv);
+
+//==============================================================================
+// TPSV - Triangular packed solve
+//==============================================================================
+
+/// Triangular packed solve
+///
+/// Solves op(A) * x = b
+///
+/// where x and b are vectors, and A is a packed triangular matrix that is optionally transposed
+/// and/or unit triangular. On entry, x contains b; on exit, x is overwritten with the solution.
+pub unsafe fn tpsv<T>(
+    handle: &Handle,
+    uplo: Fill,
+    trans_a: Operation,
+    diag: Diagonal,
+    n: i32,
+    A: *const T,
+    x: *mut T,
+    incx: i32,
+) -> Result<()>
+where
+    T: TpsvType,
+{
+    unsafe { T::rocblas_tpsv(handle, uplo, trans_a, diag, n, A, x, incx) }
+}
+
+pub trait TpsvType {
+    unsafe fn rocblas_tpsv(
+        handle: &Handle,
+        uplo: Fill,
+        trans_a: Operation,
+        diag: Diagonal,
+        n: i32,
+        A: *const Self,
+        x: *mut Self,
+        incx: i32,
+    ) -> Result<()>;
+}
+
+macro_rules! impl_tpsv {
+    ($t:ty, $func:path) => {
+        impl TpsvType for $t {
+            unsafe fn rocblas_tpsv(
+                handle: &Handle,
+                uplo: Fill,
+                trans_a: Operation,
+                diag: Diagonal,
+                n: i32,
+                A: *const Self,
+                x: *mut Self,
+                incx: i32,
+            ) -> Result<()> {
+                let status = unsafe {
+                    $func(
+                        handle.as_raw(),
+                        uplo.into(),
+                        trans_a.into(),
+                        diag.into(),
+                        n,
+                        A,
+                        x,
+                        incx,
+                    )
+                };
+                if status != ffi::rocblas_status__rocblas_status_success {
+                    return Err(Error::new(status));
+                }
+                Ok(())
+            }
+        }
+    };
+}
+
+impl_tpsv!(f32, ffi::rocblas_stpsv);
+impl_tpsv!(f64, ffi::rocblas_dtpsv);
+impl_tpsv!(ffi::rocblas_float_complex, ffi::rocblas_ctpsv);
+impl_tpsv!(ffi::rocblas_double_complex, ffi::rocblas_ztpsv);
+
+//==============================================================================
+// TBMV - Triangular banded matrix-vector multiplication
+//==============================================================================
+
+/// Triangular banded matrix-vector multiplication
+///
+/// x := op(A) * x
+///
+/// where x is a vector, and A is a triangular banded matrix with `k` sub/super-diagonals that is
+/// optionally transposed and/or unit triangular. The result overwrites x.
+pub unsafe fn tbmv<T>(
+    handle: &Handle,
+    uplo: Fill,
+    trans_a: Operation,
+    diag: Diagonal,
+    n: i32,
+    k: i32,
+    A: *const T,
+    lda: i32,
+    x: *mut T,
+    incx: i32,
+) -> Result<()>
+where
+    T: TbmvType,
+{
+    unsafe { T::rocblas_tbmv(handle, uplo, trans_a, diag, n, k, A, lda, x, incx) }
+}
+
+pub trait TbmvType {
+    unsafe fn rocblas_tbmv(
+        handle: &Handle,
+        uplo: Fill,
+        trans_a: Operation,
+        diag: Diagonal,
+        n: i32,
+        k: i32,
+        A: *const Self,
+        lda: i32,
+        x: *mut Self,
+        incx: i32,
+    ) -> Result<()>;
+}
+
+macro_rules! impl_tbmv {
+    ($t:ty, $func:path) => {
+        impl TbmvType for $t {
+            unsafe fn rocblas_tbmv(
+                handle: &Handle,
+                uplo: Fill,
+                trans_a: Operation,
+                diag: Diagonal,
+                n: i32,
+                k: i32,
+                A: *const Self,
+                lda: i32,
+                x: *mut Self,
+                incx: i32,
+            ) -> Result<()> {
+                let status = unsafe {
+                    $func(
+                        handle.as_raw(),
+                        uplo.into(),
+                        trans_a.into(),
+                        diag.into(),
+                        n,
+                        k,
+                        A,
+                        lda,
+                        x,
+                        incx,
+                    )
+                };
+                if status != ffi::rocblas_status__rocblas_status_success {
+                    return Err(Error::new(status));
+                }
+                Ok(())
+            }
+        }
+    };
+}
+
+impl_tbmv!(f32, ffi::rocblas_stbmv);
+impl_tbmv!(f64, ffi::rocblas_dtbmv);
+impl_tbmv!(ffi::rocblas_float_complex, ffi::rocblas_ctbmv);
+impl_tbmv!(ffi::rocblas_double_complex, ffi::rocblas_ztbmv);
+
+//==============================================================================
+// TBSV - Triangular banded solve
+//==============================================================================
+
+/// Triangular banded solve
+///
+/// Solves op(A) * x = b
+///
+/// where x and b are vectors, and A is a triangular banded matrix with `k` sub/super-diagonals
+/// that is optionally transposed and/or unit triangular. On entry, x contains b; on exit, x is
+/// overwritten with the solution.
+pub unsafe fn tbsv<T>(
+    handle: &Handle,
+    uplo: Fill,
+    trans_a: Operation,
+    diag: Diagonal,
+    n: i32,
+    k: i32,
+    A: *const T,
+    lda: i32,
+    x: *mut T,
+    incx: i32,
+) -> Result<()>
+where
+    T: TbsvType,
+{
+    unsafe { T::rocblas_tbsv(handle, uplo, trans_a, diag, n, k, A, lda, x, incx) }
+}
+
+pub trait TbsvType {
+    unsafe fn rocblas_tbsv(
+        handle: &Handle,
+        uplo: Fill,
+        trans_a: Operation,
+        diag: Diagonal,
+        n: i32,
+        k: i32,
+        A: *const Self,
+        lda: i32,
+        x: *mut Self,
+        incx: i32,
+    ) -> Result<()>;
+}
+
+macro_rules! impl_tbsv {
+    ($t:ty, $func:path) => {
+        impl TbsvType for $t {
+            unsafe fn rocblas_tbsv(
+                handle: &Handle,
+                uplo: Fill,
+                trans_a: Operation,
+                diag: Diagonal,
+                n: i32,
+                k: i32,
+                A: *const Self,
+                lda: i32,
+                x: *mut Self,
+                incx: i32,
+            ) -> Result<()> {
+                let status = unsafe {
+                    $func(
+                        handle.as_raw(),
+                        uplo.into(),
+                        trans_a.into(),
+                        diag.into(),
+                        n,
+                        k,
+                        A,
+                        lda,
+                        x,
+                        incx,
+                    )
+                };
+                if status != ffi::rocblas_status__rocblas_status_success {
+                    return Err(Error::new(status));
+                }
+                Ok(())
+            }
+        }
+    };
+}
+
+impl_tbsv!(f32, ffi::rocblas_stbsv);
+impl_tbsv!(f64, ffi::rocblas_dtbsv);
+impl_tbsv!(ffi::rocblas_float_complex, ffi::rocblas_ctbsv);
+impl_tbsv!(ffi::rocblas_double_complex, ffi::rocblas_ztbsv);
+
+//==============================================================================
+// SPMV - Symmetric packed matrix-vector multiplication (real only)
+//==============================================================================
+
+/// Symmetric packed matrix-vector multiplication
+///
+/// y := alpha * A * x + beta * y
+///
+/// where alpha and beta are scalars, x and y are vectors, and A is a packed symmetric matrix.
+/// Only defined for real types (f32, f64).
+pub unsafe fn spmv<T>(
+    handle: &Handle,
+    uplo: Fill,
+    n: i32,
+    alpha: &T,
+    A: *const T,
+    x: *const T,
+    incx: i32,
+    beta: &T,
+    y: *mut T,
+    incy: i32,
+) -> Result<()>
+where
+    T: SpmvType,
+{
+    unsafe { T::rocblas_spmv(handle, uplo, n, alpha, A, x, incx, beta, y, incy) }
+}
+
+pub trait SpmvType {
+    unsafe fn rocblas_spmv(
+        handle: &Handle,
+        uplo: Fill,
+        n: i32,
+        alpha: &Self,
+        A: *const Self,
+        x: *const Self,
+        incx: i32,
+        beta: &Self,
+        y: *mut Self,
+        incy: i32,
+    ) -> Result<()>;
+}
+
+macro_rules! impl_spmv {
+    ($t:ty, $func:path) => {
+        impl SpmvType for $t {
+            unsafe fn rocblas_spmv(
+                handle: &Handle,
+                uplo: Fill,
+                n: i32,
+                alpha: &Self,
+                A: *const Self,
+                x: *const Self,
+                incx: i32,
+                beta: &Self,
+                y: *mut Self,
+                incy: i32,
+            ) -> Result<()> {
+                let status = unsafe {
+                    $func(
+                        handle.as_raw(),
+                        uplo.into(),
+                        n,
+                        alpha,
+                        A,
+                        x,
+                        incx,
+                        beta,
+                        y,
+                        incy,
+                    )
+                };
+                if status != ffi::rocblas_status__rocblas_status_success {
+                    return Err(Error::new(status));
+                }
+                Ok(())
+            }
+        }
+    };
+}
+
+impl_spmv!(f32, ffi::rocblas_sspmv);
+impl_spmv!(f64, ffi::rocblas_dspmv);
+
+//==============================================================================
+// SBMV - Symmetric banded matrix-vector multiplication (real only)
+//==============================================================================
+
+/// Symmetric banded matrix-vector multiplication
+///
+/// y := alpha * A * x + beta * y
+///
+/// where alpha and beta are scalars, x and y are vectors, and A is a symmetric banded matrix with
+/// `k` sub/super-diagonals. Only defined for real types (f32, f64).
+pub unsafe fn sbmv<T>(
+    handle: &Handle,
+    uplo: Fill,
+    n: i32,
+    k: i32,
+    alpha: &T,
+    A: *const T,
+    lda: i32,
+    x: *const T,
+    incx: i32,
+    beta: &T,
+    y: *mut T,
+    incy: i32,
+) -> Result<()>
+where
+    T: SbmvType,
+{
+    unsafe {
+        T::rocblas_sbmv(
+            handle, uplo, n, k, alpha, A, lda, x, incx, beta, y, incy,
+        )
+    }
+}
+
+pub trait SbmvType {
+    unsafe fn rocblas_sbmv(
+        handle: &Handle,
+        uplo: Fill,
+        n: i32,
+        k: i32,
+        alpha: &Self,
+        A: *const Self,
+        lda: i32,
+        x: *const Self,
+        incx: i32,
+        beta: &Self,
+        y: *mut Self,
+        incy: i32,
+    ) -> Result<()>;
+}
+
+macro_rules! impl_sbmv {
+    ($t:ty, $func:path) => {
+        impl SbmvType for $t {
+            unsafe fn rocblas_sbmv(
+                handle: &Handle,
+                uplo: Fill,
+                n: i32,
+                k: i32,
+                alpha: &Self,
+                A: *const Self,
+                lda: i32,
+                x: *const Self,
+                incx: i32,
+                beta: &Self,
+                y: *mut Self,
+                incy: i32,
+            ) -> Result<()> {
+                let status = unsafe {
+                    $func(
+                        handle.as_raw(),
+                        uplo.into(),
+                        n,
+                        k,
+                        alpha,
+                        A,
+                        lda,
+                        x,
+                        incx,
+                        beta,
+                        y,
+                        incy,
+                    )
+                };
+                if status != ffi::rocblas_status__rocblas_status_success {
+                    return Err(Error::new(status));
+                }
+                Ok(())
+            }
+        }
+    };
+}
+
+impl_sbmv!(f32, ffi::rocblas_ssbmv);
+impl_sbmv!(f64, ffi::rocblas_dsbmv);
+
+//==============================================================================
+// HPMV - Hermitian packed matrix-vector multiplication (complex only)
+//==============================================================================
+
+/// Hermitian packed matrix-vector multiplication
+///
+/// y := alpha * A * x + beta * y
+///
+/// where alpha and beta are scalars, x and y are vectors, and A is a packed Hermitian matrix.
+/// Only defined for complex types.
+pub unsafe fn hpmv<T>(
+    handle: &Handle,
+    uplo: Fill,
+    n: i32,
+    alpha: &T,
+    AP: *const T,
+    x: *const T,
+    incx: i32,
+    beta: &T,
+    y: *mut T,
+    incy: i32,
+) -> Result<()>
+where
+    T: HpmvType,
+{
+    unsafe { T::rocblas_hpmv(handle, uplo, n, alpha, AP, x, incx, beta, y, incy) }
+}
+
+pub trait HpmvType {
+    unsafe fn rocblas_hpmv(
+        handle: &Handle,
+        uplo: Fill,
+        n: i32,
+        alpha: &Self,
+        AP: *const Self,
+        x: *const Self,
+        incx: i32,
+        beta: &Self,
+        y: *mut Self,
+        incy: i32,
+    ) -> Result<()>;
+}
+
+macro_rules! impl_hpmv {
+    ($t:ty, $func:path) => {
+        impl HpmvType for $t {
+            unsafe fn rocblas_hpmv(
+                handle: &Handle,
+                uplo: Fill,
+                n: i32,
+                alpha: &Self,
+                AP: *const Self,
+                x: *const Self,
+                incx: i32,
+                beta: &Self,
+                y: *mut Self,
+                incy: i32,
+            ) -> Result<()> {
+                let status = unsafe {
+                    $func(
+                        handle.as_raw(),
+                        uplo.into(),
+                        n,
+                        alpha,
+                        AP,
+                        x,
+                        incx,
+                        beta,
+                        y,
+                        incy,
+                    )
+                };
+                if status != ffi::rocblas_status__rocblas_status_success {
+                    return Err(Error::new(status));
+                }
+                Ok(())
+            }
+        }
+    };
+}
+
+impl_hpmv!(ffi::rocblas_float_complex, ffi::rocblas_chpmv);
+impl_hpmv!(ffi::rocblas_double_complex, ffi::rocblas_zhpmv);
+
+//==============================================================================
+// HPR - Hermitian packed rank-1 update (complex only, real scalar alpha)
+//==============================================================================
+
+/// Hermitian packed rank-1 update
+///
+/// AP := alpha * x * x^H + AP
+///
+/// where alpha is a real scalar, x is a vector, and AP is a packed Hermitian matrix.
+pub unsafe fn hpr<T>(
+    handle: &Handle,
+    uplo: Fill,
+    n: i32,
+    alpha: &T::Real,
+    x: *const T,
+    incx: i32,
+    AP: *mut T,
+) -> Result<()>
+where
+    T: HprType,
+{
+    unsafe { T::rocblas_hpr(handle, uplo, n, alpha, x, incx, AP) }
+}
+
+pub trait HprType {
+    type Real;
+    unsafe fn rocblas_hpr(
+        handle: &Handle,
+        uplo: Fill,
+        n: i32,
+        alpha: &Self::Real,
+        x: *const Self,
+        incx: i32,
+        AP: *mut Self,
+    ) -> Result<()>;
+}
+
+macro_rules! impl_hpr {
+    ($t:ty, $r:ty, $func:path) => {
+        impl HprType for $t {
+            type Real = $r;
+            unsafe fn rocblas_hpr(
+                handle: &Handle,
+                uplo: Fill,
+                n: i32,
+                alpha: &Self::Real,
+                x: *const Self,
+                incx: i32,
+                AP: *mut Self,
+            ) -> Result<()> {
+                let status =
+                    unsafe { $func(handle.as_raw(), uplo.into(), n, alpha, x, incx, AP) };
+                if status != ffi::rocblas_status__rocblas_status_success {
+                    return Err(Error::new(status));
+                }
+                Ok(())
+            }
+        }
+    };
+}
+
+impl_hpr!(ffi::rocblas_float_complex, f32, ffi::rocblas_chpr);
+impl_hpr!(ffi::rocblas_double_complex, f64, ffi::rocblas_zhpr);
+
+//==============================================================================
+// HPR2 - Hermitian packed rank-2 update (complex only, complex scalar alpha)
+//==============================================================================
+
+/// Hermitian packed rank-2 update
+///
+/// AP := alpha * x * y^H + conj(alpha) * y * x^H + AP
+///
+/// where alpha is a complex scalar, x and y are vectors, and AP is a packed Hermitian matrix.
+pub unsafe fn hpr2<T>(
+    handle: &Handle,
+    uplo: Fill,
+    n: i32,
+    alpha: &T,
+    x: *const T,
+    incx: i32,
+    y: *const T,
+    incy: i32,
+    AP: *mut T,
+) -> Result<()>
+where
+    T: Hpr2Type,
+{
+    unsafe { T::rocblas_hpr2(handle, uplo, n, alpha, x, incx, y, incy, AP) }
+}
+
+pub trait Hpr2Type {
+    unsafe fn rocblas_hpr2(
+        handle: &Handle,
+        uplo: Fill,
+        n: i32,
+        alpha: &Self,
+        x: *const Self,
+        incx: i32,
+        y: *const Self,
+        incy: i32,
+        AP: *mut Self,
+    ) -> Result<()>;
+}
+
+macro_rules! impl_hpr2 {
+    ($t:ty, $func:path) => {
+        impl Hpr2Type for $t {
+            unsafe fn rocblas_hpr2(
+                handle: &Handle,
+                uplo: Fill,
+                n: i32,
+                alpha: &Self,
+                x: *const Self,
+                incx: i32,
+                y: *const Self,
+                incy: i32,
+                AP: *mut Self,
+            ) -> Result<()> {
+                let status = unsafe {
+                    $func(
+                        handle.as_raw(),
+                        uplo.into(),
+                        n,
+                        alpha,
+                        x,
+                        incx,
+                        y,
+                        incy,
+                        AP,
+                    )
+                };
+                if status != ffi::rocblas_status__rocblas_status_success {
+                    return Err(Error::new(status));
+                }
+                Ok(())
+            }
+        }
+    };
+}
+
+impl_hpr2!(ffi::rocblas_float_complex, ffi::rocblas_chpr2);
+impl_hpr2!(ffi::rocblas_double_complex, ffi::rocblas_zhpr2);

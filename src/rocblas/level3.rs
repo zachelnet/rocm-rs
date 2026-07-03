@@ -6,7 +6,7 @@ use crate::rocblas::handle::Handle;
 use crate::rocblas::types::{DataType, Operation};
 use crate::rocblas::utils::GemmAlgo;
 
-use super::types::{Fill, Side};
+use super::types::{Diagonal, Fill, Side};
 
 //==============================================================================
 // GEMM functions - General Matrix-Matrix Multiplication
@@ -1270,6 +1270,26 @@ impl SyrType for f32 {
     ) -> Result<()> {
         let status =
             unsafe { ffi::rocblas_ssyr(handle.as_raw(), uplo.into(), n, alpha, x, incx, A, lda) };
+        if status != ffi::rocblas_status__rocblas_status_success {
+            return Err(Error::new(status));
+        }
+        Ok(())
+    }
+}
+
+impl SyrType for f64 {
+    unsafe fn rocblas_syr(
+        handle: &Handle,
+        uplo: Fill,
+        n: i32,
+        alpha: &Self,
+        x: *const Self,
+        incx: i32,
+        A: *mut Self,
+        lda: i32,
+    ) -> Result<()> {
+        let status =
+            unsafe { ffi::rocblas_dsyr(handle.as_raw(), uplo.into(), n, alpha, x, incx, A, lda) };
         if status != ffi::rocblas_status__rocblas_status_success {
             return Err(Error::new(status));
         }
@@ -2637,32 +2657,608 @@ impl HerkxStridedBatchedType for ffi::rocblas_double_complex {
     }
 }
 
-// Add to src/rocblas/types.rs if not already present
+// Note: `Diagonal` is defined in `super::types` and imported above.
 
-/// Enum for diagonal type
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Diagonal {
-    /// Non-unit triangular
-    NonUnit,
-    /// Unit triangular
-    Unit,
-}
+//==============================================================================
+// SYMM - Symmetric matrix-matrix multiplication
+//==============================================================================
 
-impl From<Diagonal> for ffi::rocblas_diagonal {
-    fn from(diag: Diagonal) -> Self {
-        match diag {
-            Diagonal::NonUnit => ffi::rocblas_diagonal__rocblas_diagonal_non_unit,
-            Diagonal::Unit => ffi::rocblas_diagonal__rocblas_diagonal_unit,
-        }
+/// Symmetric matrix-matrix multiplication
+///
+/// C := alpha * A * B + beta * C  if side == Side::Left
+/// C := alpha * B * A + beta * C  if side == Side::Right
+///
+/// where alpha and beta are scalars, A is a symmetric matrix, and B and C are m by n matrices.
+pub unsafe fn symm<T>(
+    handle: &Handle,
+    side: Side,
+    uplo: Fill,
+    m: i32,
+    n: i32,
+    alpha: &T,
+    A: *const T,
+    lda: i32,
+    B: *const T,
+    ldb: i32,
+    beta: &T,
+    C: *mut T,
+    ldc: i32,
+) -> Result<()>
+where
+    T: SymmType,
+{
+    unsafe {
+        T::rocblas_symm(
+            handle, side, uplo, m, n, alpha, A, lda, B, ldb, beta, C, ldc,
+        )
     }
 }
 
-impl From<ffi::rocblas_diagonal> for Diagonal {
-    fn from(diag: ffi::rocblas_diagonal) -> Self {
-        match diag {
-            ffi::rocblas_diagonal__rocblas_diagonal_non_unit => Diagonal::NonUnit,
-            ffi::rocblas_diagonal__rocblas_diagonal_unit => Diagonal::Unit,
-            _ => Diagonal::NonUnit, // Default to NonUnit for unknown values
+pub trait SymmType {
+    unsafe fn rocblas_symm(
+        handle: &Handle,
+        side: Side,
+        uplo: Fill,
+        m: i32,
+        n: i32,
+        alpha: &Self,
+        A: *const Self,
+        lda: i32,
+        B: *const Self,
+        ldb: i32,
+        beta: &Self,
+        C: *mut Self,
+        ldc: i32,
+    ) -> Result<()>;
+}
+
+macro_rules! impl_symm {
+    ($t:ty, $func:path) => {
+        impl SymmType for $t {
+            unsafe fn rocblas_symm(
+                handle: &Handle,
+                side: Side,
+                uplo: Fill,
+                m: i32,
+                n: i32,
+                alpha: &Self,
+                A: *const Self,
+                lda: i32,
+                B: *const Self,
+                ldb: i32,
+                beta: &Self,
+                C: *mut Self,
+                ldc: i32,
+            ) -> Result<()> {
+                let status = unsafe {
+                    $func(
+                        handle.as_raw(),
+                        side.into(),
+                        uplo.into(),
+                        m,
+                        n,
+                        alpha,
+                        A,
+                        lda,
+                        B,
+                        ldb,
+                        beta,
+                        C,
+                        ldc,
+                    )
+                };
+                if status != ffi::rocblas_status__rocblas_status_success {
+                    return Err(Error::new(status));
+                }
+                Ok(())
+            }
         }
+    };
+}
+
+impl_symm!(f32, ffi::rocblas_ssymm);
+impl_symm!(f64, ffi::rocblas_dsymm);
+impl_symm!(ffi::rocblas_float_complex, ffi::rocblas_csymm);
+impl_symm!(ffi::rocblas_double_complex, ffi::rocblas_zsymm);
+
+//==============================================================================
+// SYRK - Symmetric rank-k update
+//==============================================================================
+
+/// Symmetric rank-k update
+///
+/// C := alpha * A * A^T + beta * C  if transA == Operation::None
+/// C := alpha * A^T * A + beta * C  if transA == Operation::Transpose
+///
+/// where alpha and beta are scalars, C is an n by n symmetric matrix, and A is an n by k matrix in
+/// the first case and a k by n matrix in the second.
+pub unsafe fn syrk<T>(
+    handle: &Handle,
+    uplo: Fill,
+    trans_a: Operation,
+    n: i32,
+    k: i32,
+    alpha: &T,
+    A: *const T,
+    lda: i32,
+    beta: &T,
+    C: *mut T,
+    ldc: i32,
+) -> Result<()>
+where
+    T: SyrkType,
+{
+    unsafe { T::rocblas_syrk(handle, uplo, trans_a, n, k, alpha, A, lda, beta, C, ldc) }
+}
+
+pub trait SyrkType {
+    unsafe fn rocblas_syrk(
+        handle: &Handle,
+        uplo: Fill,
+        trans_a: Operation,
+        n: i32,
+        k: i32,
+        alpha: &Self,
+        A: *const Self,
+        lda: i32,
+        beta: &Self,
+        C: *mut Self,
+        ldc: i32,
+    ) -> Result<()>;
+}
+
+macro_rules! impl_syrk {
+    ($t:ty, $func:path) => {
+        impl SyrkType for $t {
+            unsafe fn rocblas_syrk(
+                handle: &Handle,
+                uplo: Fill,
+                trans_a: Operation,
+                n: i32,
+                k: i32,
+                alpha: &Self,
+                A: *const Self,
+                lda: i32,
+                beta: &Self,
+                C: *mut Self,
+                ldc: i32,
+            ) -> Result<()> {
+                let status = unsafe {
+                    $func(
+                        handle.as_raw(),
+                        uplo.into(),
+                        trans_a.into(),
+                        n,
+                        k,
+                        alpha,
+                        A,
+                        lda,
+                        beta,
+                        C,
+                        ldc,
+                    )
+                };
+                if status != ffi::rocblas_status__rocblas_status_success {
+                    return Err(Error::new(status));
+                }
+                Ok(())
+            }
+        }
+    };
+}
+
+impl_syrk!(f32, ffi::rocblas_ssyrk);
+impl_syrk!(f64, ffi::rocblas_dsyrk);
+impl_syrk!(ffi::rocblas_float_complex, ffi::rocblas_csyrk);
+impl_syrk!(ffi::rocblas_double_complex, ffi::rocblas_zsyrk);
+
+//==============================================================================
+// SYR2K - Symmetric rank-2k update
+//==============================================================================
+
+/// Symmetric rank-2k update
+///
+/// C := alpha * A * B^T + alpha * B * A^T + beta * C  if trans == Operation::None
+/// C := alpha * A^T * B + alpha * B^T * A + beta * C  if trans == Operation::Transpose
+///
+/// where alpha and beta are scalars, C is an n by n symmetric matrix, and A and B are n by k
+/// matrices in the first case and k by n matrices in the second.
+pub unsafe fn syr2k<T>(
+    handle: &Handle,
+    uplo: Fill,
+    trans: Operation,
+    n: i32,
+    k: i32,
+    alpha: &T,
+    A: *const T,
+    lda: i32,
+    B: *const T,
+    ldb: i32,
+    beta: &T,
+    C: *mut T,
+    ldc: i32,
+) -> Result<()>
+where
+    T: Syr2kType,
+{
+    unsafe {
+        T::rocblas_syr2k(
+            handle, uplo, trans, n, k, alpha, A, lda, B, ldb, beta, C, ldc,
+        )
     }
 }
+
+pub trait Syr2kType {
+    unsafe fn rocblas_syr2k(
+        handle: &Handle,
+        uplo: Fill,
+        trans: Operation,
+        n: i32,
+        k: i32,
+        alpha: &Self,
+        A: *const Self,
+        lda: i32,
+        B: *const Self,
+        ldb: i32,
+        beta: &Self,
+        C: *mut Self,
+        ldc: i32,
+    ) -> Result<()>;
+}
+
+macro_rules! impl_syr2k {
+    ($t:ty, $func:path) => {
+        impl Syr2kType for $t {
+            unsafe fn rocblas_syr2k(
+                handle: &Handle,
+                uplo: Fill,
+                trans: Operation,
+                n: i32,
+                k: i32,
+                alpha: &Self,
+                A: *const Self,
+                lda: i32,
+                B: *const Self,
+                ldb: i32,
+                beta: &Self,
+                C: *mut Self,
+                ldc: i32,
+            ) -> Result<()> {
+                let status = unsafe {
+                    $func(
+                        handle.as_raw(),
+                        uplo.into(),
+                        trans.into(),
+                        n,
+                        k,
+                        alpha,
+                        A,
+                        lda,
+                        B,
+                        ldb,
+                        beta,
+                        C,
+                        ldc,
+                    )
+                };
+                if status != ffi::rocblas_status__rocblas_status_success {
+                    return Err(Error::new(status));
+                }
+                Ok(())
+            }
+        }
+    };
+}
+
+impl_syr2k!(f32, ffi::rocblas_ssyr2k);
+impl_syr2k!(f64, ffi::rocblas_dsyr2k);
+impl_syr2k!(ffi::rocblas_float_complex, ffi::rocblas_csyr2k);
+impl_syr2k!(ffi::rocblas_double_complex, ffi::rocblas_zsyr2k);
+
+//==============================================================================
+// TRMM - Triangular matrix-matrix multiplication
+//==============================================================================
+
+/// Triangular matrix-matrix multiplication
+///
+/// C := alpha * op(A) * B  if side == Side::Left
+/// C := alpha * B * op(A)  if side == Side::Right
+///
+/// where alpha is a scalar, B and C are m by n matrices, and A is a triangular matrix that is
+/// optionally transposed and/or unit triangular.
+pub unsafe fn trmm<T>(
+    handle: &Handle,
+    side: Side,
+    uplo: Fill,
+    trans_a: Operation,
+    diag: Diagonal,
+    m: i32,
+    n: i32,
+    alpha: &T,
+    A: *const T,
+    lda: i32,
+    B: *const T,
+    ldb: i32,
+    C: *mut T,
+    ldc: i32,
+) -> Result<()>
+where
+    T: TrmmType,
+{
+    unsafe {
+        T::rocblas_trmm(
+            handle, side, uplo, trans_a, diag, m, n, alpha, A, lda, B, ldb, C, ldc,
+        )
+    }
+}
+
+pub trait TrmmType {
+    unsafe fn rocblas_trmm(
+        handle: &Handle,
+        side: Side,
+        uplo: Fill,
+        trans_a: Operation,
+        diag: Diagonal,
+        m: i32,
+        n: i32,
+        alpha: &Self,
+        A: *const Self,
+        lda: i32,
+        B: *const Self,
+        ldb: i32,
+        C: *mut Self,
+        ldc: i32,
+    ) -> Result<()>;
+}
+
+macro_rules! impl_trmm {
+    ($t:ty, $func:path) => {
+        impl TrmmType for $t {
+            unsafe fn rocblas_trmm(
+                handle: &Handle,
+                side: Side,
+                uplo: Fill,
+                trans_a: Operation,
+                diag: Diagonal,
+                m: i32,
+                n: i32,
+                alpha: &Self,
+                A: *const Self,
+                lda: i32,
+                B: *const Self,
+                ldb: i32,
+                C: *mut Self,
+                ldc: i32,
+            ) -> Result<()> {
+                let status = unsafe {
+                    $func(
+                        handle.as_raw(),
+                        side.into(),
+                        uplo.into(),
+                        trans_a.into(),
+                        diag.into(),
+                        m,
+                        n,
+                        alpha,
+                        A,
+                        lda,
+                        B,
+                        ldb,
+                        C,
+                        ldc,
+                    )
+                };
+                if status != ffi::rocblas_status__rocblas_status_success {
+                    return Err(Error::new(status));
+                }
+                Ok(())
+            }
+        }
+    };
+}
+
+impl_trmm!(f32, ffi::rocblas_strmm);
+impl_trmm!(f64, ffi::rocblas_dtrmm);
+impl_trmm!(ffi::rocblas_float_complex, ffi::rocblas_ctrmm);
+impl_trmm!(ffi::rocblas_double_complex, ffi::rocblas_ztrmm);
+
+//==============================================================================
+// TRSM - Triangular solve with multiple right-hand sides
+//==============================================================================
+
+/// Triangular solve with multiple right-hand sides
+///
+/// Solves op(A) * X = alpha * B  if side == Side::Left
+/// Solves X * op(A) = alpha * B  if side == Side::Right
+///
+/// where alpha is a scalar, X and B are m by n matrices, and A is a triangular matrix that is
+/// optionally transposed and/or unit triangular. B is overwritten with the solution matrix X.
+pub unsafe fn trsm<T>(
+    handle: &Handle,
+    side: Side,
+    uplo: Fill,
+    trans_a: Operation,
+    diag: Diagonal,
+    m: i32,
+    n: i32,
+    alpha: &T,
+    A: *const T,
+    lda: i32,
+    B: *mut T,
+    ldb: i32,
+) -> Result<()>
+where
+    T: TrsmType,
+{
+    unsafe {
+        T::rocblas_trsm(
+            handle, side, uplo, trans_a, diag, m, n, alpha, A, lda, B, ldb,
+        )
+    }
+}
+
+pub trait TrsmType {
+    unsafe fn rocblas_trsm(
+        handle: &Handle,
+        side: Side,
+        uplo: Fill,
+        trans_a: Operation,
+        diag: Diagonal,
+        m: i32,
+        n: i32,
+        alpha: &Self,
+        A: *const Self,
+        lda: i32,
+        B: *mut Self,
+        ldb: i32,
+    ) -> Result<()>;
+}
+
+macro_rules! impl_trsm {
+    ($t:ty, $func:path) => {
+        impl TrsmType for $t {
+            unsafe fn rocblas_trsm(
+                handle: &Handle,
+                side: Side,
+                uplo: Fill,
+                trans_a: Operation,
+                diag: Diagonal,
+                m: i32,
+                n: i32,
+                alpha: &Self,
+                A: *const Self,
+                lda: i32,
+                B: *mut Self,
+                ldb: i32,
+            ) -> Result<()> {
+                let status = unsafe {
+                    $func(
+                        handle.as_raw(),
+                        side.into(),
+                        uplo.into(),
+                        trans_a.into(),
+                        diag.into(),
+                        m,
+                        n,
+                        alpha,
+                        A,
+                        lda,
+                        B,
+                        ldb,
+                    )
+                };
+                if status != ffi::rocblas_status__rocblas_status_success {
+                    return Err(Error::new(status));
+                }
+                Ok(())
+            }
+        }
+    };
+}
+
+impl_trsm!(f32, ffi::rocblas_strsm);
+impl_trsm!(f64, ffi::rocblas_dtrsm);
+impl_trsm!(ffi::rocblas_float_complex, ffi::rocblas_ctrsm);
+impl_trsm!(ffi::rocblas_double_complex, ffi::rocblas_ztrsm);
+
+//==============================================================================
+// GEAM - General matrix-matrix addition
+//==============================================================================
+
+/// General matrix-matrix addition
+///
+/// C := alpha * op(A) + beta * op(B)
+///
+/// where alpha and beta are scalars, and A, B, C are matrices, with op(A) an m by n matrix and
+/// op(B) an m by n matrix.
+pub unsafe fn geam<T>(
+    handle: &Handle,
+    trans_a: Operation,
+    trans_b: Operation,
+    m: i32,
+    n: i32,
+    alpha: &T,
+    A: *const T,
+    lda: i32,
+    beta: &T,
+    B: *const T,
+    ldb: i32,
+    C: *mut T,
+    ldc: i32,
+) -> Result<()>
+where
+    T: GeamType,
+{
+    unsafe {
+        T::rocblas_geam(
+            handle, trans_a, trans_b, m, n, alpha, A, lda, beta, B, ldb, C, ldc,
+        )
+    }
+}
+
+pub trait GeamType {
+    unsafe fn rocblas_geam(
+        handle: &Handle,
+        trans_a: Operation,
+        trans_b: Operation,
+        m: i32,
+        n: i32,
+        alpha: &Self,
+        A: *const Self,
+        lda: i32,
+        beta: &Self,
+        B: *const Self,
+        ldb: i32,
+        C: *mut Self,
+        ldc: i32,
+    ) -> Result<()>;
+}
+
+macro_rules! impl_geam {
+    ($t:ty, $func:path) => {
+        impl GeamType for $t {
+            unsafe fn rocblas_geam(
+                handle: &Handle,
+                trans_a: Operation,
+                trans_b: Operation,
+                m: i32,
+                n: i32,
+                alpha: &Self,
+                A: *const Self,
+                lda: i32,
+                beta: &Self,
+                B: *const Self,
+                ldb: i32,
+                C: *mut Self,
+                ldc: i32,
+            ) -> Result<()> {
+                let status = unsafe {
+                    $func(
+                        handle.as_raw(),
+                        trans_a.into(),
+                        trans_b.into(),
+                        m,
+                        n,
+                        alpha,
+                        A,
+                        lda,
+                        beta,
+                        B,
+                        ldb,
+                        C,
+                        ldc,
+                    )
+                };
+                if status != ffi::rocblas_status__rocblas_status_success {
+                    return Err(Error::new(status));
+                }
+                Ok(())
+            }
+        }
+    };
+}
+
+impl_geam!(f32, ffi::rocblas_sgeam);
+impl_geam!(f64, ffi::rocblas_dgeam);
+impl_geam!(ffi::rocblas_float_complex, ffi::rocblas_cgeam);
+impl_geam!(ffi::rocblas_double_complex, ffi::rocblas_zgeam);

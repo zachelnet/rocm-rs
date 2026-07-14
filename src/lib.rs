@@ -12,6 +12,7 @@ pub mod rocsolver;
 #[cfg(feature = "rocm_smi")]
 pub mod rocmsmi;
 // mod rocprofiler;
+#[cfg(feature = "macros")]
 pub mod rocarray;
 pub mod rocsparse;
 

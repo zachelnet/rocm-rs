@@ -9,7 +9,6 @@ use std::marker::PhantomData;
 
 pub mod kernels;
 pub mod random;
-#[cfg(feature = "macros")]
 pub mod sorting;
 
 /// Shape information for multidimensional arrays

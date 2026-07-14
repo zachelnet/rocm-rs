@@ -1,5 +1,7 @@
+#[cfg(feature = "macros")]
 pub mod sorting;
 
+#[cfg(feature = "macros")]
 use crate::hip::memory_ext::sorting::GPUSortAllowed;
 use crate::hip::{DeviceMemory, Result, Stream};
 
@@ -12,6 +14,7 @@ pub trait MemoryExt<T> {
     fn check_sorted_async(&self, stream: &Stream) -> Result<bool>;
 }
 
+#[cfg(feature = "macros")]
 impl<T> MemoryExt<T> for DeviceMemory<T>
 where
     T: GPUSortAllowed,
